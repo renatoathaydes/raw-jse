@@ -6,7 +6,7 @@ import java.net.URLClassLoader;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class Main {
+final class Main {
     final AtomicReference<AppRuntime> appRef = new AtomicReference<>();
     final File classPathDir;
     final String appClassName;
@@ -69,7 +69,6 @@ public class Main {
     }
 
     private static void start( Class<?> starterClass ) {
-        System.out.println( "Trying to start up " + starterClass.hashCode() );
         Object starter;
         try {
             starter = starterClass.getConstructor().newInstance();

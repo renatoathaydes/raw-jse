@@ -51,7 +51,6 @@ final class WatchDir implements Closeable {
     }
 
     private void runCallback() {
-        System.out.println( "Running callback" );
         try {
             onChange.run();
         } catch ( Exception e ) {
