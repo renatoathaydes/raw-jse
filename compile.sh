@@ -7,10 +7,10 @@ rm -rf dist/
 
 echo "Compiling framework"
 mkdir -p dist/framework
-javac framework/src/*.java -d dist/framework
+javac $(find ./framework -name "*.java") -d dist/framework
 
 echo "Compiling application"
 mkdir -p dist/app
-javac app/src/*.java -d dist/app
+javac $(find ./app -name "*.java") -d dist/app
 
 echo "Done"
