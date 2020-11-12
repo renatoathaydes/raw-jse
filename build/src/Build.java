@@ -5,7 +5,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toCollection;
 
@@ -28,21 +28,15 @@ class Build {
         if ( !rootDir.isDirectory() ) {
             failBuild( "Not a directory: " + rootDir );
         }
-        var files = new ArrayList<File>();
-        addJavaFilesTo( files, rootDir );
-        return files;
-    }
-
-    private static void addJavaFilesTo( List<File> files, File dir ) {
-        Optional.ofNullable( dir.listFiles() ).ifPresent( children -> {
-            for ( File child : children ) {
-                if ( child.isDirectory() ) {
-                    addJavaFilesTo( files, child );
-                } else if ( child.getName().endsWith( ".java" ) ) {
-                    files.add( child );
-                }
-            }
-        } );
+        try {
+            return Files.walk( rootDir.toPath() )
+                    .map( Path::toFile )
+                    .filter( File::isFile )
+                    .filter( f -> f.getName().endsWith( ".java" ) )
+                    .collect( Collectors.toList() );
+        } catch ( IOException e ) {
+            throw failBuild( "Error trying to get Java sources at %s: %s", rootDir, e );
+        }
     }
 
     private static void compile( List<File> files, File destinationDir ) {
@@ -60,8 +54,7 @@ class Build {
                 code = new ProcessBuilder( cmd )
                         .inheritIO().start().waitFor();
             } catch ( InterruptedException | IOException e ) {
-                failBuild( "Cannot run command %s: %s", cmd.get( 0 ), e );
-                return;
+                throw failBuild( "Cannot run command %s: %s", cmd.get( 0 ), e );
             }
             if ( code != 0 ) {
                 failBuild( "Command failed (exitCode=%d): %s",
@@ -92,8 +85,9 @@ class Build {
                 ( System.nanoTime() - start ) * Math.pow( 10, -9 ) );
     }
 
-    private static void failBuild( String format, Object... args ) {
+    private static RuntimeException failBuild( String format, Object... args ) {
         System.err.printf( "Build FAILED: " + format, args );
         System.exit( 1 );
+        return new RuntimeException( "unreachable" );
     }
 }
