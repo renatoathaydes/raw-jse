@@ -15,16 +15,12 @@ import static java.nio.file.StandardWatchEventKinds.*;
 
 final class WatchDir implements Closeable {
 
-    private final WatchService watcher;
-    private final Map<WatchKey, Path> keys;
+    private final WatchService watcher = FileSystems.getDefault().newWatchService();
+    private final Map<WatchKey, Path> keys = new HashMap<>();
     private final Runnable onChange;
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
-    private boolean changed;
-
     WatchDir( Path dir, Runnable onChange ) throws IOException {
-        this.watcher = FileSystems.getDefault().newWatchService();
-        this.keys = new HashMap<>();
         this.onChange = onChange;
 
         System.out.println( "Watching directory " + dir );
@@ -34,13 +30,17 @@ final class WatchDir implements Closeable {
             e.printStackTrace();
         }
 
-        executorService.scheduleAtFixedRate( () -> {
-            // only run callback if the files changed, but not since last run
-            var wasChanged = changed;
-            changed = false;
-            processEvents();
-            if ( wasChanged && !changed ) {
-                runCallback();
+        executorService.scheduleAtFixedRate( new Runnable() {
+            boolean changed;
+
+            @Override
+            public void run() {
+                // only run callback if the files changed, but not since last run
+                var wasChanged = changed;
+                changed = processEvents();
+                if ( wasChanged && !changed ) {
+                    runCallback();
+                }
             }
         }, 5, 2, TimeUnit.SECONDS );
     }
@@ -72,26 +72,26 @@ final class WatchDir implements Closeable {
     }
 
     private void register( Path dir ) throws IOException {
-        WatchKey key = dir.register( watcher, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY );
+        var key = dir.register( watcher, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY );
         keys.put( key, dir );
     }
 
-    private void processEvents() {
-        // wait for key to be signalled
-        WatchKey key = watcher.poll();
+    private boolean processEvents() {
+        var changed = false;
+        var key = watcher.poll();
 
         if ( key == null ) {
-            return;
+            return changed;
         }
 
         Path dir = keys.get( key );
         if ( dir == null ) {
             System.err.println( "WatchKey not recognized!!" );
-            return;
+            return changed;
         }
 
         for ( WatchEvent<?> event : key.pollEvents() ) {
-            WatchEvent.Kind kind = event.kind();
+            var kind = event.kind();
 
             if ( kind == OVERFLOW ) {
                 continue;
@@ -110,17 +110,18 @@ final class WatchDir implements Closeable {
                     if ( Files.isDirectory( child, NOFOLLOW_LINKS ) ) {
                         registerAll( child );
                     }
-                } catch ( IOException x ) {
-                    // ignore to keep sample readbale
+                } catch ( IOException e ) {
+                    System.err.printf( "Unable to start watching %s due to %s%n", child, e );
                 }
             }
         }
 
-        // reset key and remove from set if directory no longer accessible
         boolean valid = key.reset();
         if ( !valid ) {
             keys.remove( key );
         }
+
+        return changed;
     }
 
 }
