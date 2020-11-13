@@ -1,6 +1,9 @@
-public final class Starter implements Runnable {
+import java.util.function.Function;
+
+public final class Starter implements Function<String, String> {
+
     @Override
-    public void run() {
-        System.out.println( "Starter running!" );
+    public String apply( String path ) {
+        return "You sent me path " + path + "!\n";
     }
 }

@@ -5,9 +5,11 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 final class Main {
     final AtomicReference<AppRuntime> appRef = new AtomicReference<>();
+    final HttpServer server = new HttpServer( 8080 );
     final File classPathDir;
     final String appClassName;
 
@@ -68,7 +70,7 @@ final class Main {
         }
     }
 
-    private static void start( Class<?> starterClass ) {
+    private void start( Class<?> starterClass ) {
         Object starter;
         try {
             starter = starterClass.getConstructor().newInstance();
@@ -76,9 +78,16 @@ final class Main {
             throw new RuntimeException( "Unable to start up application", e );
         }
 
-        if ( starter instanceof Runnable ) {
-            new Thread( ( Runnable ) starter ).start();
+        Function<String, String> handler;
+        if ( starter instanceof Function ) {
+            //noinspection unchecked
+            handler = ( Function<String, String> ) starter;
+        } else {
+            System.err.println( "Error: Cannot run application of type " + starter.getClass().getName() );
+            handler = ignore -> null;
         }
+
+        new Thread( () -> server.run( handler ) ).start();
     }
 
 }
