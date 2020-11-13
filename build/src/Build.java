@@ -19,7 +19,8 @@ class Build {
         timing( "Build SUCCESS", () -> {
             System.out.println( "Building..." );
             prepareCleanDir( frameworkDist, appDist );
-            compile( findJavaSources( frameworkSrc ), frameworkDist );
+            compile( findJavaSources( frameworkSrc ), frameworkDist,
+                    "framework/libs/rawhttp-core-2.4.0.jar" );
             compile( findJavaSources( appSrc ), appDist );
         } );
     }
@@ -39,11 +40,14 @@ class Build {
         }
     }
 
-    private static void compile( List<File> files, File destinationDir ) {
+    private static void compile( List<File> files, File destinationDir, String... classpath ) {
         var cmd = new ArrayList<String>();
         cmd.add( "javac" );
         files.stream().map( File::getPath ).collect( toCollection( () -> cmd ) );
         cmd.addAll( List.of( "-d", destinationDir.getPath() ) );
+        if ( classpath.length > 0 ) {
+            cmd.addAll( List.of( "-cp", String.join( ":", classpath ) ) );
+        }
         runCommand( cmd );
     }
 
