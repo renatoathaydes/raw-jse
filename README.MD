@@ -22,5 +22,5 @@ java -cp dist/framework Main dist/app Starter
 To re-compile only the app for hot reloading it:
 
 ```bash
-
+javac app/src/Starter.java -d dist/app/
 ```
