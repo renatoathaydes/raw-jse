@@ -5,12 +5,17 @@ set -e
 echo "Cleaning up"
 rm -rf dist/
 
+echo "Compiling annotations"
+javac annotations/src/raw/jse/http/*.java -d dist/annotations
+
+echo "Compiling annotation processors"
+javac -proc:none -cp dist/annotations/ $(find ./processors/src -name "*.java") -d dist/processors
+cp -r processors/resources/ dist/processors/
+
 echo "Compiling framework"
 mkdir -p dist/framework
-javac $(find ./framework -name "*.java") -d dist/framework
+javac -cp "framework/libs/*" $(find ./framework/src -name "*.java") -d dist/framework
 
-echo "Compiling application"
-mkdir -p dist/app
-javac $(find ./app -name "*.java") -d dist/app
+./compile-app.sh
 
 echo "Done"

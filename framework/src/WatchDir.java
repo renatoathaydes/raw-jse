@@ -20,14 +20,17 @@ final class WatchDir implements Closeable {
     private final Runnable onChange;
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
-    WatchDir( Path dir, Runnable onChange ) throws IOException {
+    WatchDir( String[] classpath, Runnable onChange ) throws IOException {
         this.onChange = onChange;
 
-        System.out.println( "Watching directory " + dir );
-        try {
-            registerAll( dir );
-        } catch ( IOException e ) {
-            e.printStackTrace();
+        for ( String path : classpath ) {
+            var dir = Paths.get( path );
+            if ( dir.toFile().isDirectory() ) try {
+                System.out.println( "Watching directory " + dir );
+                registerAll( dir );
+            } catch ( IOException e ) {
+                e.printStackTrace();
+            }
         }
 
         executorService.scheduleAtFixedRate( new Runnable() {

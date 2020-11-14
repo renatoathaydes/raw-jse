@@ -1,31 +1,47 @@
+import org.apache.commons.io.FileUtils;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toCollection;
 
 class Build {
+    static final File annotationsSrc = new File( "annotations/src" );
     static final File frameworkSrc = new File( "framework/src" );
+    static final File processorsSrc = new File( "processors/src" );
+    static final File processorsResources = new File( "processors/resources" );
     static final File appSrc = new File( "app/src" );
+    static final File annotationsDist = new File( "dist/annotations" );
     static final File frameworkDist = new File( "dist/framework" );
+    static final File processorsDist = new File( "dist/processors" );
     static final File appDist = new File( "dist/app" );
 
     public static void main( String[] args ) {
         timing( "Build SUCCESS", () -> {
             System.out.println( "Building..." );
-            prepareCleanDir( frameworkDist, appDist );
-            compile( findJavaSources( frameworkSrc ), frameworkDist,
-                    "framework/libs/rawhttp-core-2.4.0.jar" );
-            compile( findJavaSources( appSrc ), appDist );
+            prepareCleanDir( frameworkDist, annotationsDist, processorsDist, appDist );
+            compile( findJavaSources( frameworkSrc, Set.of( "HttpServer.java" ) ), frameworkDist );
+            compile( findJavaSources( annotationsSrc ), annotationsDist );
+            compile( findJavaSources( processorsSrc ), processorsDist, annotationsDist.getPath() );
+            copy( processorsResources, processorsDist );
+            compile( findJavaSources( appSrc ), appDist,
+                    annotationsDist.getPath(),
+                    processorsDist.getPath(),
+                    "framework/libs/rawhttp-core-2.4.1.jar" );
         } );
     }
 
     private static List<File> findJavaSources( File rootDir ) {
+        return findJavaSources( rootDir, Set.of() );
+    }
+
+    private static List<File> findJavaSources( File rootDir, Set<String> excludes ) {
         if ( !rootDir.isDirectory() ) {
             failBuild( "Not a directory: " + rootDir );
         }
@@ -34,6 +50,7 @@ class Build {
                     .map( Path::toFile )
                     .filter( File::isFile )
                     .filter( f -> f.getName().endsWith( ".java" ) )
+                    .filter( f -> !excludes.contains( f.getName() ) )
                     .collect( Collectors.toList() );
         } catch ( IOException e ) {
             throw failBuild( "Error trying to get Java sources at %s: %s", rootDir, e );
@@ -69,16 +86,19 @@ class Build {
 
     private static void prepareCleanDir( File... dirs ) {
         for ( File dir : dirs ) {
-            if ( dir.isDirectory() ) {
-                try {
-                    Files.walk( dir.toPath() )
-                            .sorted( Comparator.reverseOrder() )
-                            .map( Path::toFile )
-                            .forEach( File::delete );
-                } catch ( IOException e ) {
-                    failBuild( "Unable to delete dir %s due to %s", dir, e );
-                }
+            try {
+                FileUtils.deleteDirectory( dir );
+            } catch ( IOException e ) {
+                failBuild( "Error deleting directory: " + dir + ": " + e );
             }
+        }
+    }
+
+    private static void copy( File source, File target ) {
+        try {
+            FileUtils.copyDirectory( source, target );
+        } catch ( IOException e ) {
+            failBuild( "Error copying directory: " + source + ": " + e );
         }
     }
 

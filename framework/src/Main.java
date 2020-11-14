@@ -5,30 +5,28 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 
 final class Main {
     final AtomicReference<AppRuntime> appRef = new AtomicReference<>();
-    final HttpServer server = new HttpServer( 8080 );
-    final File classPathDir;
+    final String[] classPath;
     final String appClassName;
 
-    public Main( File classPathDir, String appClassName ) throws IOException {
-        this.classPathDir = classPathDir;
+    public Main( String classPath, String appClassName ) throws IOException {
+        this.classPath = classPath.split( ":" );
         this.appClassName = appClassName;
-        System.out.printf( "classpath=%s, runnableClass=%s%n", classPathDir, appClassName );
+        System.out.printf( "classpath=%s, runnableClass=%s%n", classPath, appClassName );
         loadAndStartApp();
-        new WatchDir( classPathDir.toPath(), this::swapApp );
+        new WatchDir( this.classPath, this::swapApp );
     }
 
     public static void main( String[] args ) throws IOException {
         if ( args.length != 2 ) {
-            System.err.println( "Usage: java Main <classpath-dir> <runnable-class>" );
+            System.err.println( "Usage: java Main <classpath> <runnable-class>" );
             System.exit( 1 );
         }
-        var classPathDir = new File( args[ 0 ] );
+        var classPath = args[ 0 ];
         var appClassName = args[ 1 ];
-        new Main( classPathDir, appClassName );
+        new Main( classPath, appClassName );
     }
 
     private void swapApp() {
@@ -39,24 +37,32 @@ final class Main {
             } catch ( IOException e ) {
                 e.printStackTrace();
             }
+            var closeable = app.closeable;
+            if ( closeable != null ) try {
+                app.closeable.close();
+            } catch ( Exception e ) {
+                e.printStackTrace();
+            }
         }
         loadAndStartApp();
     }
 
     private void loadAndStartApp() {
-        loadApp().ifPresent( app -> start( app.appClass ) );
+        loadApp().ifPresent( app -> start( app ) );
     }
 
     private Optional<AppRuntime> loadApp() {
-        URLClassLoader appClassLoader;
+        URL[] urls = new URL[ classPath.length ];
         try {
-            appClassLoader = new URLClassLoader( new URL[]{
-                    classPathDir.toURI().toURL()
-            }, ClassLoader.getPlatformClassLoader() );
+            for ( int i = 0; i < classPath.length; i++ ) {
+                urls[ i ] = new File( classPath[ i ] ).toURI().toURL();
+            }
         } catch ( MalformedURLException e ) {
             System.err.println( "Error creating class loader: " + e );
             return Optional.empty();
         }
+
+        var appClassLoader = new URLClassLoader( urls, ClassLoader.getPlatformClassLoader() );
 
         try {
             var app = new AppRuntime(
@@ -70,24 +76,22 @@ final class Main {
         }
     }
 
-    private void start( Class<?> starterClass ) {
+    private void start( AppRuntime app ) {
         Object starter;
         try {
-            starter = starterClass.getConstructor().newInstance();
+            starter = app.appClass.getConstructor().newInstance();
         } catch ( Exception e ) {
             throw new RuntimeException( "Unable to start up application", e );
         }
 
-        Function<String, String> handler;
-        if ( starter instanceof Function ) {
-            //noinspection unchecked
-            handler = ( Function<String, String> ) starter;
+        if ( starter instanceof Runnable ) {
+            new Thread( ( Runnable ) starter ).start();
+            if ( starter instanceof AutoCloseable ) {
+                app.closeable = ( AutoCloseable ) starter;
+            }
         } else {
             System.err.println( "Error: Cannot run application of type " + starter.getClass().getName() );
-            handler = ignore -> null;
         }
-
-        new Thread( () -> server.run( handler ) ).start();
     }
 
 }
@@ -95,6 +99,10 @@ final class Main {
 final class AppRuntime {
     final Class<?> appClass;
     final URLClassLoader loader;
+
+    // if the app is started correctly and is Closeable,
+    // this field will hold the app instance so we can close it before swapping it out
+    AutoCloseable closeable;
 
     public AppRuntime( Class<?> appClass, URLClassLoader loader ) {
         this.appClass = appClass;
