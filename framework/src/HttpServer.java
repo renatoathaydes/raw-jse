@@ -5,11 +5,11 @@ import rawhttp.core.server.TcpRawHttpServer;
 import java.util.Optional;
 import java.util.function.Function;
 
-public class HttpServer {
+final class HttpServer {
     private final RawHttp http = new RawHttp();
     private final TcpRawHttpServer server;
 
-    public HttpServer( int port ) {
+    HttpServer( int port ) {
         this.server = new TcpRawHttpServer( port );
     }
 
