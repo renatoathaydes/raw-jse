@@ -7,6 +7,8 @@ START_TIME=$(gdate +%s%3N)
 
 # start the server
 ./run.sh &
+#./nativemain &
+#java -cp "framework/libs/*:dist/native" NativeMain &
 
 STEP=0.001      # sleep between tries, in seconds
 TRIES=500

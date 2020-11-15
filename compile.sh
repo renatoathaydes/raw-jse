@@ -7,7 +7,7 @@ rm -rf dist/
 
 echo "Compiling framework"
 mkdir -p dist/framework
-javac -cp "framework/libs/*" $(find ./framework -name "*.java") -d dist/framework
+javac -cp "framework/libs/*" framework/src/{WatchDir.java,Main.java,HttpServer.java}  -d dist/framework
 
 echo "Compiling application"
 mkdir -p dist/app
