@@ -1,3 +1,7 @@
+
+import http.HttpServer;
+import http.api.RequestHandlers;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -7,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class Main {
+    final HttpServer httpServer = new HttpServer( 8080 );
     final AtomicReference<AppRuntime> appRef = new AtomicReference<>();
     final String[] classPath;
     final String appClassName;
@@ -15,6 +20,11 @@ final class Main {
         this.classPath = classPath.split( ":" );
         this.appClassName = appClassName;
         System.out.printf( "classpath=%s, runnableClass=%s%n", classPath, appClassName );
+
+        // start server immediately without any handlers
+        httpServer.run( new RequestHandlers() {
+        } );
+
         loadAndStartApp();
         new WatchDir( this.classPath, this::swapApp );
     }
@@ -37,18 +47,12 @@ final class Main {
             } catch ( IOException e ) {
                 e.printStackTrace();
             }
-            var closeable = app.closeable;
-            if ( closeable != null ) try {
-                app.closeable.close();
-            } catch ( Exception e ) {
-                e.printStackTrace();
-            }
         }
         loadAndStartApp();
     }
 
     private void loadAndStartApp() {
-        loadApp().ifPresent( app -> start( app ) );
+        loadApp().ifPresent( this::start );
     }
 
     private Optional<AppRuntime> loadApp() {
@@ -62,7 +66,7 @@ final class Main {
             return Optional.empty();
         }
 
-        var appClassLoader = new URLClassLoader( urls, ClassLoader.getPlatformClassLoader() );
+        var appClassLoader = new URLClassLoader( urls, RequestHandlers.class.getClassLoader() );
 
         try {
             var app = new AppRuntime(
@@ -84,11 +88,8 @@ final class Main {
             throw new RuntimeException( "Unable to start up application", e );
         }
 
-        if ( starter instanceof Runnable ) {
-            new Thread( ( Runnable ) starter ).start();
-            if ( starter instanceof AutoCloseable ) {
-                app.closeable = ( AutoCloseable ) starter;
-            }
+        if ( starter instanceof RequestHandlers ) {
+            httpServer.run( ( RequestHandlers ) starter );
         } else {
             System.err.println( "Error: Cannot run application of type " + starter.getClass().getName() );
         }
@@ -99,10 +100,6 @@ final class Main {
 final class AppRuntime {
     final Class<?> appClass;
     final URLClassLoader loader;
-
-    // if the app is started correctly and is Closeable,
-    // this field will hold the app instance so we can close it before swapping it out
-    AutoCloseable closeable;
 
     public AppRuntime( Class<?> appClass, URLClassLoader loader ) {
         this.appClass = appClass;

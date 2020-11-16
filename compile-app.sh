@@ -6,5 +6,6 @@ echo "Cleaning up application"
 rm -rf dist/app/
 
 echo "Compiling application"
-mkdir -p dist/app
+mkdir -p dist/app/http/api/
+cp -r dist/framework/http/api/ dist/app/http/api/
 javac -cp "dist/annotations/:dist/processors/:dist/app/:framework/libs/*" $(find ./app/src -name "*.java") -d dist/app

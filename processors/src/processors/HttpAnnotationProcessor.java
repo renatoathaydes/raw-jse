@@ -14,35 +14,37 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
-import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.regex.Pattern;
+
+import static java.util.stream.Collectors.toList;
 
 @SupportedAnnotationTypes( "raw.jse.http.HttpEndpoint" )
 @SupportedSourceVersion( SourceVersion.RELEASE_11 )
 public final class HttpAnnotationProcessor extends AbstractProcessor {
+
+    private static final Pattern handlersLinePattern =
+            Pattern.compile( "\\s+/\\*\\s+ADD HANDLERS HERE\\s+\\*/\\s*" );
 
     @Override
     public boolean process( Set<? extends TypeElement> annotations,
                             RoundEnvironment roundEnv ) {
         if ( annotations.isEmpty() ) return false;
 
-        var classNames = new ArrayList<Endpoint>();
-        for ( var annotation : annotations ) {
-            for ( var element : roundEnv.getElementsAnnotatedWith( annotation ) ) {
-                processingEnv.getMessager().printMessage( Diagnostic.Kind.NOTE,
-                        "found @HttpEndpoint at " + element );
-                var httpEndpoint = element.getAnnotation( HttpEndpoint.class );
-                classNames.add( new Endpoint( ( ( TypeElement ) element ), httpEndpoint.path() ) );
-            }
-        }
+        var classNames = getEndpoints( annotations, roundEnv );
 
         try {
-            writeMain( classNames );
+            try ( var reader = readCodegenTemplateRequestHandlers() ) {
+                writeMain( classNames, reader.lines().iterator() );
+            }
         } catch ( IOException e ) {
             processingEnv.getMessager().printMessage( Diagnostic.Kind.ERROR,
                     "Could not write Main due to: " + e );
@@ -51,122 +53,77 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
         return true;
     }
 
+    private BufferedReader readCodegenTemplateRequestHandlers() throws IOException {
+        return Files.newBufferedReader( Paths.get( "framework", "src", "http",
+                "CodegenTemplateRequestHandlers.java" ) );
+    }
+
+    private List<Endpoint> getEndpoints( Set<? extends TypeElement> annotations, RoundEnvironment roundEnv ) {
+        return annotations.stream()
+                .flatMap( annotation -> roundEnv.getElementsAnnotatedWith( annotation ).stream() )
+                .map( element -> {
+                    processingEnv.getMessager().printMessage( Diagnostic.Kind.NOTE,
+                            "found @HttpEndpoint at " + element );
+                    var httpEndpoint = element.getAnnotation( HttpEndpoint.class );
+                    return new Endpoint( ( ( TypeElement ) element ), httpEndpoint.path() );
+                } ).collect( toList() );
+    }
+
     private List<? extends Element> getPublicMethods( TypeElement element,
                                                       Class<? extends Annotation> annotationType ) {
         return processingEnv.getElementUtils().getAllMembers( element ).stream()
                 .filter( e -> e.getKind() == ElementKind.METHOD )
                 .filter( e -> e.getModifiers().contains( Modifier.PUBLIC ) )
                 .filter( e -> e.getAnnotationsByType( annotationType ).length > 0 )
-                .collect( Collectors.toList() );
+                .collect( toList() );
     }
 
-    private void writeMain( List<Endpoint> endpoints ) throws IOException {
+    private void writeMain( List<Endpoint> endpoints, Iterator<String> templateLines ) throws IOException {
         var filer = processingEnv.getFiler();
         var fileObject = filer.createSourceFile( "http.Main" );
-        var getMapName = "getHandlers";
-        var postMapName = "postHandlers";
 
         try ( var writer = fileObject.openWriter() ) {
-            writer.write( "package http;\n" +
-                    "\n" +
-                    "import rawhttp.core.RawHttp;\n" +
-                    "import rawhttp.core.body.StringBody;\n" +
-                    "import rawhttp.core.server.TcpRawHttpServer;\n" +
-                    "\n" +
-                    "import java.io.IOException;\n" +
-                    "import java.nio.charset.StandardCharsets;\n" +
-                    "import java.util.HashMap;\n" +
-                    "import java.util.Optional;\n" +
-                    "import java.util.function.Function;\n" +
-                    "import java.util.function.Supplier;\n" +
-                    "\n" +
-                    "public class Main implements Runnable, AutoCloseable {\n" +
-                    "    private static final int port = 8080;\n" +
-                    "    private final RawHttp http = new RawHttp();\n" +
-                    "    private final TcpRawHttpServer server;\n" +
-                    "\n" +
-                    "    public Main() {\n" +
-                    "        this.server = new TcpRawHttpServer( port );\n" +
-                    "    }\n" +
-                    "    @Override public void run() {\n" );
-            writeEndpointCreators( "        ", endpoints, writer );
-            writer.write( '\n' );
-            writeGetMap( "        ", getMapName, endpoints, writer );
-            writer.write( '\n' );
-            writePostMap( "        ", postMapName, endpoints, writer );
-            writer.write( '\n' );
-            writer.write( "" +
-                    "        server.start( ( req ) -> {\n" +
-                    "            String body = null;\n" +
-                    "            var path = req.getUri().getPath();\n" +
-                    "            if ( req.getMethod().equals( \"GET\" ) ) {\n" +
-                    "                var h = " + getMapName + ".get( path );\n" +
-                    "                if ( h != null ) {\n" +
-                    "                    body = h.get();\n" +
-                    "                }\n" +
-                    "            } else if ( req.getMethod().equals( \"POST\" ) ) {\n" +
-                    "                var h = " + postMapName + ".get( path );\n" +
-                    "                if ( h != null ) {\n" +
-                    "                    var reqBody = req.getBody().map(\n" +
-                    "                            b -> {\n" +
-                    "                                try {\n" +
-                    "                                    return b.decodeBodyToString( StandardCharsets.UTF_8 );\n" +
-                    "                                } catch ( IOException e ) {\n" +
-                    "                                    throw new RuntimeException( e );\n" +
-                    "                                }\n" +
-                    "                            } ).orElse( \"\" );\n" +
-                    "                    body = h.apply( reqBody );\n" +
-                    "                }\n" +
-                    "            }\n" +
-                    "            if ( body == null ) {\n" +
-                    "                return Optional.empty();\n" +
-                    "            }\n" +
-                    "            return Optional.of( http.parseResponse( \"200 OK\" )\n" +
-                    "                    .withBody( new StringBody( body, \"text/plain\" ) ) );\n" +
-                    "        } );" +
-                    "    }\n" +
-                    "    @Override public void close() {\n" +
-                    "        server.stop();\n" +
-                    "    }\n" +
-                    "\n" +
-                    "    public static void main(String... args) {\n" +
-                    "        new Main().run();\n" +
-                    "        System.out.println(\"Server running on port \" + port);" +
-                    "    }\n" +
-                    "}" );
+            var handlersLineFound = false;
+            while ( templateLines.hasNext() ) {
+                var line = templateLines.next();
+                if ( !handlersLineFound && handlersLinePattern.matcher( line ).find() ) {
+                    handlersLineFound = true;
+                    var indent = " ".repeat( ( int ) line.chars().takeWhile( c -> c == ' ' ).count() );
+                    writeEndpointCreators( indent, endpoints, writer );
+                    writer.write( '\n' );
+                    writeHandlers( indent, endpoints, writer );
+                } else {
+                    writer.write( line.replace( "CodegenTemplateRequestHandlers", "Main" ) );
+                    writer.write( '\n' );
+                }
+            }
         }
     }
 
     private void writeEndpointCreators( String indent, List<Endpoint> endpoints, Writer writer ) throws IOException {
         for ( Endpoint endpoint : endpoints ) {
-            writer.write( indent + "var " + endpoint.classElement.getSimpleName() + " = new " +
+            writer.write( indent + "var " + endpoint.getVarName() + " = new " +
                     endpoint.classElement.getQualifiedName() + "();\n" );
         }
     }
 
-    private void writeGetMap( String indent, String name, List<Endpoint> endpoints, Writer writer ) throws IOException {
-        writer.write( indent + "var " + name + " = new HashMap<String, Supplier<String>>();\n" );
+    private void writeHandlers( String indent, List<Endpoint> endpoints, Writer writer ) throws IOException {
         for ( Endpoint endpoint : endpoints ) {
             for ( Element method : getPublicMethods( endpoint.classElement, GET.class ) ) {
                 var subPath = method.getAnnotation( GET.class ).path();
-                writer.write( indent + name + ".put(" +
-                        "\"" + joinPaths( endpoint.path, subPath ) + "\", " +
-                        endpoint.classElement.getSimpleName() + "::" + method.getSimpleName().toString() + ");\n" );
+                writeHandlers( indent, method, endpoint, "getHandlers", subPath, writer );
+            }
+            for ( Element method : getPublicMethods( endpoint.classElement, POST.class ) ) {
+                var subPath = method.getAnnotation( POST.class ).path();
+                writeHandlers( indent, method, endpoint, "postHandlers", subPath, writer );
             }
         }
     }
 
-    private void writePostMap( String indent, String name, List<Endpoint> endpoints, Writer writer ) throws IOException {
-        writer.write(
-                indent + "var " + name + " = new HashMap<String, Function<String, String>>();\n" );
-        for ( Endpoint endpoint : endpoints ) {
-            for ( Element method : getPublicMethods( endpoint.classElement, POST.class ) ) {
-                var subPath = method.getAnnotation( POST.class ).path();
-                writer.write( indent + name + ".put(" +
-                        "\"" + joinPaths( endpoint.path, subPath ) + "\", " +
-                        endpoint.classElement.getSimpleName() + "::" + method.getSimpleName().toString() + ");\n" );
-            }
-        }
+    private void writeHandlers( String indent, Element method, Endpoint endpoint, String varName, String subPath, Writer writer ) throws IOException {
+        writer.write( indent + varName + ".put(" +
+                "\"" + joinPaths( endpoint.path, subPath ) + "\", " +
+                endpoint.getVarName() + "::" + method.getSimpleName().toString() + ");\n" );
     }
 
     private String joinPaths( String p1, String p2 ) {
@@ -193,5 +150,9 @@ class Endpoint {
     public Endpoint( TypeElement classElement, String path ) {
         this.classElement = classElement;
         this.path = path;
+    }
+
+    String getVarName() {
+        return classElement.getSimpleName().toString().toLowerCase();
     }
 }
