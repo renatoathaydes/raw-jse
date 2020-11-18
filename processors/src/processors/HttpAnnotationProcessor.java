@@ -31,6 +31,12 @@ import static java.util.stream.Collectors.toList;
 @SupportedSourceVersion( SourceVersion.RELEASE_11 )
 public final class HttpAnnotationProcessor extends AbstractProcessor {
 
+    private static final String GENERATED_CLASS_PKG = "http";
+    private static final String GENERATED_HANDLERS_NAME = "AppRequestHandlers";
+    private static final String GENERATED_MAIN_NAME = "HttpMain";
+    private static final String GENERATED_HANDLERS_CLASS = GENERATED_CLASS_PKG + "." + GENERATED_HANDLERS_NAME;
+    private static final String GENERATED_MAIN_CLASS = GENERATED_CLASS_PKG + "." + GENERATED_MAIN_NAME;
+
     private static final Pattern handlersLinePattern =
             Pattern.compile( "\\s+/\\*\\s+ADD HANDLERS HERE\\s+\\*/\\s*" );
 
@@ -43,11 +49,12 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
 
         try {
             try ( var reader = readCodegenTemplateRequestHandlers() ) {
-                writeMain( classNames, reader.lines().iterator() );
+                writeAppRequestHandlers( classNames, reader.lines().iterator() );
             }
+            writeMainClass();
         } catch ( IOException e ) {
             processingEnv.getMessager().printMessage( Diagnostic.Kind.ERROR,
-                    "Could not write Main due to: " + e );
+                    "Could not write classes due to: " + e );
         }
 
         return true;
@@ -78,9 +85,10 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
                 .collect( toList() );
     }
 
-    private void writeMain( List<Endpoint> endpoints, Iterator<String> templateLines ) throws IOException {
+    private void writeAppRequestHandlers( List<Endpoint> endpoints, Iterator<String> templateLines )
+            throws IOException {
         var filer = processingEnv.getFiler();
-        var fileObject = filer.createSourceFile( "http.AppRequestHandlers" );
+        var fileObject = filer.createSourceFile( GENERATED_HANDLERS_CLASS );
 
         try ( var writer = fileObject.openWriter() ) {
             var handlersLineFound = false;
@@ -93,7 +101,7 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
                     writer.write( '\n' );
                     writeHandlers( indent, endpoints, writer );
                 } else {
-                    writer.write( line.replace( "CodegenTemplateRequestHandlers", "AppRequestHandlers" ) );
+                    writer.write( line.replace( "CodegenTemplateRequestHandlers", GENERATED_HANDLERS_NAME ) );
                     writer.write( '\n' );
                 }
             }
@@ -139,6 +147,23 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
             p1 = p1 + "/";
         }
         return p1 + p2;
+    }
+
+    private void writeMainClass() throws IOException {
+        var filer = processingEnv.getFiler();
+        var fileObject = filer.createSourceFile( GENERATED_MAIN_CLASS );
+
+        try ( var writer = fileObject.openWriter() ) {
+            writer.write( "package http;\n\n" +
+                    "final class " + GENERATED_MAIN_NAME + " {\n" +
+                    "  public static void main(String... args) {\n" +
+                    "    System.out.println(\"Starting server on port 8080\");\n" +
+                    "    var server = new HttpServer(8080);\n" +
+                    "    var handlers = new " + GENERATED_HANDLERS_NAME + "();\n" +
+                    "    server.run(handlers);" +
+                    "  }\n" +
+                    "}\n" );
+        }
     }
 
 }
