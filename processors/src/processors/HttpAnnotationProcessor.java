@@ -80,7 +80,7 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
 
     private void writeMain( List<Endpoint> endpoints, Iterator<String> templateLines ) throws IOException {
         var filer = processingEnv.getFiler();
-        var fileObject = filer.createSourceFile( "http.Main" );
+        var fileObject = filer.createSourceFile( "http.AppRequestHandlers" );
 
         try ( var writer = fileObject.openWriter() ) {
             var handlersLineFound = false;
@@ -93,7 +93,7 @@ public final class HttpAnnotationProcessor extends AbstractProcessor {
                     writer.write( '\n' );
                     writeHandlers( indent, endpoints, writer );
                 } else {
-                    writer.write( line.replace( "CodegenTemplateRequestHandlers", "Main" ) );
+                    writer.write( line.replace( "CodegenTemplateRequestHandlers", "AppRequestHandlers" ) );
                     writer.write( '\n' );
                 }
             }
