@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toCollection;
+import static java.util.stream.Collectors.toSet;
 
 class Build {
     static final File annotationsSrc = new File( "annotations/src" );
@@ -21,19 +22,21 @@ class Build {
     static final File frameworkDist = new File( "dist/framework" );
     static final File processorsDist = new File( "dist/processors" );
     static final File appDist = new File( "dist/app" );
+    static final List<String> runtimeFrameworkClasses = List.of(
+            "http/HttpServer.class", "http/api/RequestHandlers.class" );
 
     public static void main( String[] args ) {
         timing( "Build SUCCESS", () -> {
             System.out.println( "Building..." );
             prepareCleanDir( frameworkDist, annotationsDist, processorsDist, appDist );
-            compile( findJavaSources( frameworkSrc, Set.of( "HttpServer.java" ) ), frameworkDist );
+            compile( findJavaSources( frameworkSrc ), frameworkDist, "framework/libs/*" );
+            copyDir( frameworkDist, appDist, runtimeFrameworkClasses );
             compile( findJavaSources( annotationsSrc ), annotationsDist );
             compile( findJavaSources( processorsSrc ), processorsDist, annotationsDist.getPath() );
-            copy( processorsResources, processorsDist );
+            copyDir( processorsResources, processorsDist );
             compile( findJavaSources( appSrc ), appDist,
                     annotationsDist.getPath(),
-                    processorsDist.getPath(),
-                    "framework/libs/rawhttp-core-2.4.1.jar" );
+                    appDist.getPath(), processorsDist.getPath(), "framework/libs/*" );
         } );
     }
 
@@ -94,9 +97,27 @@ class Build {
         }
     }
 
-    private static void copy( File source, File target ) {
+    private static void copyDir( File source, File target ) {
+        copyDir( source, target, List.of() );
+    }
+
+    private static void copyDir( File source, File target, List<String> includes ) {
+        var includePaths = includes.stream()
+                .map( inc -> new File( source, inc ).getPath() )
+                .collect( toSet() );
         try {
-            FileUtils.copyDirectory( source, target );
+            FileUtils.copyDirectory( source, target, pathname -> {
+                System.out.println( "Checking path: " + pathname );
+                if ( includes.isEmpty() ) return true;
+                if ( pathname.isDirectory() ) {
+                    System.out.println( "Path is dir: " + pathname );
+                    var pathDir = pathname + "/";
+                    return includePaths.stream().anyMatch( inc -> inc.startsWith( pathDir ) );
+                } else {
+                    System.out.println( "Path is file: " + pathname );
+                    return includePaths.contains( pathname.getPath() );
+                }
+            } );
         } catch ( IOException e ) {
             failBuild( "Error copying directory: " + source + ": " + e );
         }
@@ -111,7 +132,6 @@ class Build {
 
     private static RuntimeException failBuild( String format, Object... args ) {
         System.err.printf( "Build FAILED: " + format, args );
-        System.exit( 1 );
-        return new RuntimeException( "unreachable" );
+        throw new RuntimeException( "Build failure" );
     }
 }
