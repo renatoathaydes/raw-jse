@@ -13,15 +13,20 @@ import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toSet;
 
 class Build {
+    static final String frameworkLibs = "framework/libs/*";
+    static final String testLibs = "test/libs/*";
+    static final String junitJar = "test/runtime-libs/junit-platform-console-standalone-1.7.0-all.jar";
     static final File annotationsSrc = new File( "annotations/src" );
     static final File frameworkSrc = new File( "framework/src" );
     static final File processorsSrc = new File( "processors/src" );
     static final File processorsResources = new File( "processors/resources" );
     static final File appSrc = new File( "app/src" );
+    static final File testSrc = new File( "test/src" );
     static final File annotationsDist = new File( "dist/annotations" );
     static final File frameworkDist = new File( "dist/framework" );
     static final File processorsDist = new File( "dist/processors" );
     static final File appDist = new File( "dist/app" );
+    static final File testDist = new File( "dist/test" );
     static final List<String> runtimeFrameworkClasses = List.of(
             "http/HttpServer.class", "http/api/RequestHandlers.class" );
 
@@ -29,14 +34,16 @@ class Build {
         timing( "Build SUCCESS", () -> {
             System.out.println( "Building..." );
             prepareCleanDir( frameworkDist, annotationsDist, processorsDist, appDist );
-            compile( findJavaSources( frameworkSrc ), frameworkDist, "framework/libs/*" );
+            compile( findJavaSources( frameworkSrc ), frameworkDist, frameworkLibs );
             copyDir( frameworkDist, appDist, runtimeFrameworkClasses );
             compile( findJavaSources( annotationsSrc ), annotationsDist );
             compile( findJavaSources( processorsSrc ), processorsDist, annotationsDist.getPath() );
             copyDir( processorsResources, processorsDist );
             compile( findJavaSources( appSrc ), appDist,
                     annotationsDist.getPath(),
-                    appDist.getPath(), processorsDist.getPath(), "framework/libs/*" );
+                    appDist.getPath(), processorsDist.getPath(), frameworkLibs );
+            compile( findJavaSources( testSrc ), testDist, testLibs, appDist.getPath() );
+            runTests( junitJar, testLibs, testDist.getPath(), appDist.getPath() );
         } );
     }
 
@@ -107,20 +114,23 @@ class Build {
                 .collect( toSet() );
         try {
             FileUtils.copyDirectory( source, target, pathname -> {
-                System.out.println( "Checking path: " + pathname );
                 if ( includes.isEmpty() ) return true;
                 if ( pathname.isDirectory() ) {
-                    System.out.println( "Path is dir: " + pathname );
                     var pathDir = pathname + "/";
                     return includePaths.stream().anyMatch( inc -> inc.startsWith( pathDir ) );
                 } else {
-                    System.out.println( "Path is file: " + pathname );
                     return includePaths.contains( pathname.getPath() );
                 }
             } );
         } catch ( IOException e ) {
             failBuild( "Error copying directory: " + source + ": " + e );
         }
+    }
+
+    private static void runTests( String junitJar, String... classpath ) {
+        var cmd = List.of( "java", "-jar", junitJar, "--fail-if-no-tests",
+                "-cp", String.join( ":", classpath ), "--scan-classpath" );
+        runCommand( cmd );
     }
 
     private static void timing( String action, Runnable runnable ) {
