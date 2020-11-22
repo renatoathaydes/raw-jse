@@ -53,7 +53,7 @@ class Build {
 
     private static List<File> findJavaSources( File rootDir, Set<String> excludes ) {
         if ( !rootDir.isDirectory() ) {
-            failBuild( "Not a directory: " + rootDir );
+            throw failBuild( "Not a directory: " + rootDir );
         }
         try {
             return Files.walk( rootDir.toPath() )
@@ -88,7 +88,7 @@ class Build {
                 throw failBuild( "Cannot run command %s: %s", cmd.get( 0 ), e );
             }
             if ( code != 0 ) {
-                failBuild( "Command failed (exitCode=%d): %s",
+                throw failBuild( "Command failed (exitCode=%d): %s",
                         code, String.join( " ", cmd ) );
             }
         } );
@@ -99,7 +99,7 @@ class Build {
             try {
                 FileUtils.deleteDirectory( dir );
             } catch ( IOException e ) {
-                failBuild( "Error deleting directory: " + dir + ": " + e );
+                throw failBuild( "Error deleting directory: " + dir + ": " + e );
             }
         }
     }
@@ -123,7 +123,7 @@ class Build {
                 }
             } );
         } catch ( IOException e ) {
-            failBuild( "Error copying directory: " + source + ": " + e );
+            throw failBuild( "Error copying directory: " + source + ": " + e );
         }
     }
 
