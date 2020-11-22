@@ -11,7 +11,7 @@ To try it out:
 2. run the [Main](framework/src/Main.java) class as shown below.
 3. change [Starter.java](app/src/Starter.java).
 4. re-compile the app in another shell.
-5. observe how the [Starter] class was swapped and re-run.
+5. observe how the `Starter` class was swapped and re-run.
 
 To run the `Main` class and let it reload the `Starter`, run this command:
 
